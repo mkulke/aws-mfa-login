@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Stack for managing IAM resources that mandates MFA
+
+Resources:
+  AdminMFARole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AdministratorAccess
+      RoleName: AdminMFARole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Sid: AllowAssumeRoleIfMFAIsPresent
+          Effect: Allow
+          Principal:
+            AWS: !Ref AWS::AccountId
+          Action: sts:AssumeRole
+          Condition:
+            Bool:
+              aws:MultiFactorAuthPresent: true
+
+  AdminMFAGroup:
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: AdminMFAGroup
+      Policies:
+      - PolicyName: AllowAssumeAdminMFAPolicy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            Sid: AllowUserToAssumeAdminMFARole
+            Effect: Allow
+            Action: sts:AssumeRole
+            Resource: !GetAtt AdminMFARole.Arn
+
+  ManageMFAPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: A policy that allows users to manage their personal MFA configuration
+      Groups:
+      - !Ref AdminMFAGroup
+      ManagedPolicyName: ManageMFAPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Sid: AllowUsersToManageTheirOwnMFADevice
+          Effect: Allow
+          Action:
+          - iam:CreateVirtualMFADevice
+          - iam:EnableMFADevice
+          - iam:ResyncMFADevice
+          Resource:
+          - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':mfa/${aws:username}']]
+          - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':user/${aws:username}']]
+
+        - Sid: AllowUsersToListMFADevicesAndUsers
+          Effect: Allow
+          Action:
+          - iam:ListMFADevices
+          - iam:ListVirtualMFADevices
+          - iam:ListUsers
+          Resource: "*"
