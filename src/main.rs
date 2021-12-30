@@ -17,6 +17,12 @@ struct Opt {
     /// MFA token code
     #[structopt(short, long)]
     token: String,
+    /// Application profile
+    #[structopt(short, long, default_value = "default")]
+    profile: String,
+    /// Verbose output
+    #[structopt(short, long)]
+    verbose: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -117,13 +123,20 @@ async fn assume_role(config: &Config, token: &str) -> Result<Credentials, Box<dy
     Ok(credentials)
 }
 
-fn get_config(home_dir: &Path) -> Result<Config, Box<dyn Error>> {
+fn get_config(profile: &str, home_dir: &Path) -> Result<Config, Box<dyn Error>> {
     let config_path: PathBuf = [home_dir.to_path_buf(), format!(".{}.toml", PKG_NAME).into()]
         .iter()
         .collect();
 
-    let config: Config = Figment::new()
-        .merge(Toml::file(&config_path))
+    let figment = Figment::new().merge(Toml::file(&config_path).nested());
+
+    figment
+        .profiles()
+        .find(|p| p.as_str() == profile)
+        .ok_or(format!("profile {} not found", profile))?;
+
+    let config: Config = figment
+        .select(profile)
         .extract()
         .map_err(|e| format!("{}: {}", &config_path.to_string_lossy(), e))?;
 
@@ -132,12 +145,23 @@ fn get_config(home_dir: &Path) -> Result<Config, Box<dyn Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let Opt { token } = Opt::from_args();
+    let Opt {
+        token,
+        profile,
+        verbose,
+    } = Opt::from_args();
 
     let home_dir = dirs::home_dir().ok_or("could not resolve home directory")?;
-    let config = get_config(&home_dir)?;
+    let config = get_config(&profile, &home_dir)?;
     let credentials = assume_role(&config, &token).await?;
     set_credentials(&config, &home_dir, credentials)?;
+
+    if verbose {
+        println!(
+            "role-arn: {}, aws-profile: {}",
+            config.role_arn, config.aws_profile
+        );
+    }
 
     Ok(())
 }

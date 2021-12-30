@@ -2,6 +2,24 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Stack for managing IAM resources that mandates MFA
 
 Resources:
+  EC2ReadMFARole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
+      RoleName: EC2ReadMFARole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Sid: AllowAssumeRoleIfMFAIsPresent
+          Effect: Allow
+          Principal:
+            AWS: !Ref AWS::AccountId
+          Action: sts:AssumeRole
+          Condition:
+            Bool:
+              aws:MultiFactorAuthPresent: true
+
   AdminMFARole:
     Type: AWS::IAM::Role
     Properties:
@@ -32,7 +50,9 @@ Resources:
             Sid: AllowUserToAssumeAdminMFARole
             Effect: Allow
             Action: sts:AssumeRole
-            Resource: !GetAtt AdminMFARole.Arn
+            Resource:
+            - !GetAtt AdminMFARole.Arn
+            - !GetAtt EC2ReadMFARole.Arn
 
   ManageMFAPolicy:
     Type: AWS::IAM::ManagedPolicy
